@@ -1,136 +1,226 @@
-# Beltche MCP Server - Setup Guide
+# Beltche MCP Server
 
-## 🎯 Co zostało zaimplementowane
+> MCP (Model Context Protocol) Server for Beltche - BJJ gym management platform.
 
-OAuth flow do autoryzacji użytkowników Beltche + pobieranie prawdziwych danych studentów.
+Allows AI assistants like ChatGPT to interact with your Beltche account to manage students, trainings, and gym data.
 
-### Tools:
-1. **`authorize`** - Zwraca URL do autoryzacji OAuth
-2. **`get_students`** - Pobiera listę studentów (wymaga `linkToken` po autoryzacji)
+## 🏗️ Architecture
 
----
-
-## 🔧 Setup krok po kroku
-
-### 1. Pobierz credentials od kolegi
-
-Poproś kolegę o utworzenie OAuth Application w FusionAuth z następującymi danymi:
-- **Redirect URI**: `https://your-ngrok-url.ngrok-free.app/auth/callback` (zaktualizujesz po uruchomieniu ngrok)
-- **Scope**: `openid profile email`
-
-Otrzymasz:
-- `OAUTH_CLIENT_ID`
-- `OAUTH_CLIENT_SECRET`
-
-### 2. Uzupełnij `.env`
-
-Edytuj plik `.env` i wklej otrzymane wartości:
-
-```env
-OAUTH_CLIENT_ID=twoj-client-id-z-fusionauth
-OAUTH_CLIENT_SECRET=twoj-client-secret-z-fusionauth
-OAUTH_AUTHORIZE_URL=https://auth.beltche.com/oauth2/authorize
-OAUTH_TOKEN_URL=https://auth.beltche.com/oauth2/token
-OAUTH_REDIRECT_BASE=https://your-ngrok-url.ngrok-free.app
-PORT=3000
+```
+src/
+├── index.ts              # Entry point
+├── server.ts             # Express + MCP server setup
+├── config/
+│   └── env.ts            # Environment validation (Zod)
+├── auth/
+│   ├── oauth.service.ts  # OAuth flow logic
+│   ├── oauth.routes.ts   # Express routes for OAuth
+│   ├── token.store.ts    # Token storage factory
+│   ├── memory.token.store.ts  # In-memory implementation
+│   └── redis.token.store.ts   # Redis implementation
+├── tools/
+│   ├── index.ts          # Tool registration
+│   ├── authorize.tool.ts # Authorization tool
+│   └── students.tool.ts  # Get students tool
+├── services/
+│   └── beltche.api.ts    # Beltche API client
+├── middleware/
+│   ├── logger.ts         # Pino logger
+│   └── errors.ts         # Error handling
+└── types/
+    ├── student.ts        # Student types
+    └── oauth.ts          # OAuth types
 ```
 
-### 3. Uruchom serwer lokalnie
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 20+
+- npm or yarn
+- OAuth credentials from FusionAuth
+
+### 1. Clone and install
 
 ```bash
-npx tsx server.ts
+git clone https://github.com/gajda-w/Beltche-MCP-Server.git
+cd Beltche-MCP-Server
+npm install
 ```
 
-### 4. Uruchom ngrok
+### 2. Configure environment
 
-W **nowym terminalu**:
+```bash
+cp .env.example .env
+# Edit .env with your OAuth credentials
+```
+
+### 3. Run in development
+
+```bash
+npm run dev
+```
+
+### 4. Expose with ngrok (for ChatGPT)
 
 ```bash
 ngrok http 3000
 ```
 
-Skopiuj URL typu: `https://xxxx-xx-xx.ngrok-free.app`
+Update `OAUTH_REDIRECT_BASE` in `.env` with your ngrok URL and restart the server.
 
-### 5. Zaktualizuj `.env` i FusionAuth
+## 📦 Available Scripts
 
-1. W `.env` zmień `OAUTH_REDIRECT_BASE` na Twój ngrok URL
-2. Poproś kolegę o zaktualizowanie Redirect URI w FusionAuth na: `https://twoj-ngrok-url.ngrok-free.app/auth/callback`
-3. **Zrestartuj serwer** (`Ctrl+C` i ponownie `npx tsx server.ts`)
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server with hot reload |
+| `npm run build` | Build TypeScript to JavaScript |
+| `npm start` | Run production server |
+| `npm test` | Run tests |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run TypeScript type checking |
+| `npm run docker:build` | Build Docker image |
+| `npm run docker:compose` | Start with Docker Compose (includes Redis) |
 
-### 6. Połącz z ChatGPT
+## 🔧 MCP Tools
 
-1. W ChatGPT otwórz konfigurację MCP servers
-2. Dodaj nowy server z URL: `https://twoj-ngrok-url.ngrok-free.app/mcp`
+### `authorize`
 
----
+Generates an OAuth authorization URL for user authentication.
 
-## 📱 Testowanie flow
+**Input:** None
 
-### Krok 1: Autoryzacja
+**Output:**
+- `linkToken` - Token to use in subsequent API calls
+- `authUrl` - URL to open in browser for authorization
 
-W ChatGPT napisz:
+### `get_students`
+
+Fetches students from Beltche API.
+
+**Input:**
+- `linkToken` - The linkToken received from authorize tool
+
+**Output:**
+- `students` - Array of student objects
+- `count` - Total number of students
+
+## 🔐 OAuth Flow
+
 ```
-Call the authorize tool
+┌──────────┐     ┌─────────────┐     ┌────────────┐
+│ ChatGPT  │     │ MCP Server  │     │ FusionAuth │
+└────┬─────┘     └──────┬──────┘     └─────┬──────┘
+     │                  │                  │
+     │ call "authorize" │                  │
+     ├─────────────────>│                  │
+     │                  │                  │
+     │ return authUrl + │                  │
+     │ linkToken        │                  │
+     │<─────────────────┤                  │
+     │                  │                  │
+     │ user clicks URL  │                  │
+     ├──────────────────┼─────────────────>│
+     │                  │                  │
+     │                  │  redirect with   │
+     │                  │  code            │
+     │                  │<─────────────────┤
+     │                  │                  │
+     │                  │ exchange code    │
+     │                  │ for token        │
+     │                  ├─────────────────>│
+     │                  │                  │
+     │                  │ access_token     │
+     │                  │<─────────────────┤
+     │                  │                  │
+     │ call "get_students"                 │
+     │ with linkToken   │                  │
+     ├─────────────────>│                  │
+     │                  │                  │
+     │                  │ fetch students   │
+     │                  ├─────────────────>│ Beltche API
+     │                  │<─────────────────┤
+     │                  │                  │
+     │ students data    │                  │
+     │<─────────────────┤                  │
 ```
 
-ChatGPT poprosi o pozwolenie (kliknij **Confirm**). Otrzymasz:
-- `linkToken` (np. `a1b2c3d4-e5f6-...`)
-- `authUrl` (link do logowania)
+## 🐳 Docker
 
-### Krok 2: Zaloguj się
+### Development with Docker Compose
 
-1. **Kliknij w `authUrl`** (otworzy przeglądarkę)
-2. Zaloguj się na konto admina Beltche
-3. Po zalogowaniu zostaniesz przekierowany z powrotem - zobaczysz "✅ Authorization Complete"
+```bash
+# Start server + Redis
+docker-compose up -d
 
-### Krok 3: Pobierz studentów
+# View logs
+docker-compose logs -f
 
-W ChatGPT napisz:
-```
-Get my students using linkToken: a1b2c3d4-e5f6-...
+# Stop
+docker-compose down
 ```
 
-(Podstaw swój prawdziwy `linkToken`)
+### Production build
 
-ChatGPT wywoła `get_students` i zwróci listę Twoich prawdziwych studentów z Beltche! 🎉
+```bash
+docker build -t beltche-mcp-server .
+docker run -p 3000:3000 --env-file .env beltche-mcp-server
+```
 
----
+## 🛡️ Security
+
+- **Token storage:** Uses Redis in production, in-memory for development
+- **Secrets redaction:** Pino logger automatically redacts sensitive fields
+- **Rate limiting:** 100 requests per minute per IP
+- **HTTPS:** Required in production (use ngrok for development)
+- **OAuth PKCE:** Consider implementing for additional security
+
+## 📊 Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/mcp` | POST | MCP protocol endpoint |
+| `/auth/callback` | GET | OAuth callback |
 
 ## 🔍 Debugging
 
-### Logi serwera
-Wszystkie requesty są logowane w terminalu gdzie uruchomiłeś `npx tsx server.ts`
+### Enable debug logs
 
-### Sprawdź czy token został zapisany
-Po autoryzacji w logach zobaczysz:
-```
-✅ Authorization successful for linkToken: xxxx-xxxx-xxxx
+```bash
+NODE_ENV=development npm run dev
 ```
 
-### Błędy OAuth
-- **401/403**: Client ID/Secret niepoprawne
-- **Redirect URI mismatch**: Zaktualizuj w FusionAuth
-- **No token**: Użytkownik nie dokończył autoryzacji
+### View all logs
 
----
+Logs include:
+- Request/response logging
+- OAuth flow events
+- API calls to Beltche
+- Token storage operations
 
-## 🚀 Co dalej?
+### Common issues
 
-Możesz dodać więcej tools:
-- `get_trainings` - lista treningów
-- `add_student` - dodawanie studentów
-- `update_belt` - zmiana pasa studenta
+1. **"Environment validation failed"** - Missing required env vars
+2. **"invalid_client"** - Wrong OAuth credentials
+3. **"Token exchange failed"** - Check FusionAuth configuration
+4. **"not_authorized"** - User needs to complete OAuth flow
 
-Każdy tool będzie używał tego samego tokenu z `tokenStore.get(linkToken)`.
+## 📝 Environment Variables
 
----
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OAUTH_CLIENT_ID` | ✅ | - | FusionAuth client ID |
+| `OAUTH_CLIENT_SECRET` | ✅ | - | FusionAuth client secret |
+| `OAUTH_AUTHORIZE_URL` | ✅ | - | FusionAuth authorize URL |
+| `OAUTH_TOKEN_URL` | ✅ | - | FusionAuth token URL |
+| `OAUTH_REDIRECT_BASE` | ✅ | - | Base URL for OAuth callback |
+| `OAUTH_SCOPE` | ❌ | `openid profile email` | OAuth scopes |
+| `PORT` | ❌ | `3000` | Server port |
+| `NODE_ENV` | ❌ | `development` | Environment |
+| `REDIS_URL` | ❌ | - | Redis URL for token storage |
+| `BELTCHE_API_BASE_URL` | ❌ | `https://beltche.com/api/v1` | Beltche API URL |
 
-## 🔒 Security Notes
+## 📄 License
 
-⚠️ **Development only** - obecna implementacja używa in-memory storage dla tokenów. W produkcji:
-- Użyj bazy danych (PostgreSQL, Redis)
-- Zaszyfruj tokeny (AES-256)
-- Ogranicz lifetime linkToken
-- Implementuj refresh token flow
-- Dodaj rate limiting
-- Używaj HTTPS zawsze (ngrok zapewnia to w dev)
+ISC
