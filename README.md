@@ -28,6 +28,7 @@ For ChatGPT integration, expose with ngrok: `ngrok http 3000`
 |------|-------------|
 | `authorize` | Generates OAuth URL, returns `linkToken` + `authUrl` |
 | `get_students` | Fetches students (requires `linkToken`) |
+| `create_gym` | Creates a new gym/club (requires `linkToken`) |
 
 ## 📦 Scripts
 

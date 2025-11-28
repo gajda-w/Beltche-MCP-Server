@@ -2,6 +2,7 @@ import { env } from '../config/env.js';
 import { logger } from '../middleware/logger.js';
 import { ExternalApiError } from '../middleware/errors.js';
 import type { Student } from '../types/student.js';
+import type { Gym, CreateGymInput } from '../types/gym.js';
 
 /**
  * Beltche API client
@@ -27,6 +28,17 @@ export class BeltcheApiClient {
    */
   async getStudents(accessToken: string): Promise<Student[]> {
     const response = await this.request<Student[]>('/students', accessToken);
+    return response;
+  }
+
+  /**
+   * Create a new gym
+   */
+  async createGym(accessToken: string, gymData: CreateGymInput): Promise<Gym> {
+    const response = await this.request<Gym>('/gyms', accessToken, {
+      method: 'POST',
+      body: gymData,
+    });
     return response;
   }
 
